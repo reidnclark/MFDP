@@ -1,119 +1,277 @@
-import requests
-import yfinance as yf
-import pandas as pd
-import math
-import matplotlib.pyplot as plt
+import ipywidgets as widgets
+from ipywidgets import interact, Button
+from IPython.display import display, HTML
 
-from random import gauss
-import matplotlib.pyplot as plt
-import numpy as np
-from arch import arch_model
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+def start_function():
 
-api_key = '1cd34981158f47d2933af4113984b78a'
+    import requests
+    from datetime import datetime, timedelta
+    from decimal import Decimal
+    import locale
+    ## Format values as $USD
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
-# ticker = str(input('Enter Abbreviation Here (SX, FX, Crypto):'))
-ticker = 'MOD'
-interval = '1month'
+    import math
+    from arch import arch_model
+    from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+    import matplotlib.pyplot as plt
 
-# mirror twelvedata with yf
-yf_ticker = yf.Ticker(ticker)
-yf_hist = yf_ticker.history(period='3y')
-pd_yf_hist = pd.DataFrame(yf_hist)
-yf_cvals = pd_yf_hist['Close']
+    import numpy as np
+    import pandas as pd
+    import pandas_datareader as web
+    ## Set no limit in number of rows / columns displayed for large datasets of stocks:
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.max_rows', None)
 
-# YYYY-MM-DD
-start_date = '2020-01-01'
-end_date = '2024-01-01'
-api_url = f'https://api.twelvedata.com/time_series?symbol={ticker}&start_date={start_date}&end_date={end_date}&interval={interval}&outputsize=12&apikey={api_key}'
+    import yfinance as yf
 
-data = requests.get(api_url).json()
-pd_data = pd.DataFrame(data['values'])
+    ## Currency formatter function
+    def currency_formatter(value):
+        return locale.currency(value, grouping=True)
 
-# index 0 is most recent data
-close_vals = pd_data['close']
+    ticker = 'AAPL'
 
-# avg_return_func for column of values
-def return_vals_func(values):
-    array = []
+    period_input = '3y'
 
-    for i in range(len(values)-1):
-        recent_val = float(values[i])
-        later_val = float(values[i+1])
-        chng = round((((recent_val - later_val)/later_val)*100),2)
-        array.append(chng)
-    
-    return array[::-1]
+    # Part 1 - Fundamental Analysis #
+    def main():
+        def all():
+            ## Sample Stock Input: Apple / AAPL
+            stock1 = yf.Ticker(ticker)
+            ## String slice & print
+            print(f'Ticker Name: {ticker}')
 
-# final return list values 'return_vals'
-return_vals = return_vals_func(close_vals)
+            ## Set "S&P 500 Index" as the Industry Sector for all Beta Calculations
+            market_index = yf.Ticker('^GSPC') # ...so S&P 500 only
 
-# calculate average return
-avg_return = round((sum(return_vals) / len(return_vals)),2)
-print(f'Ticker: {ticker}')
-print(f'Average Return over period ({start_date} to {end_date}) for Time Interval {interval} : {avg_return}%')
+            def grapher():
+                ## Ask for period to chart, create .history dataframe
+                user_period_input = str(input('Enter Time Period to Graph Here: '))
+                df_stock1_info_grapher = pd.DataFrame(stock1.info(period=(user_period_input)))
 
-def deviations_calc(values, baseline):
-    array1 = []
+                ## Gather 'x' recent history for stock...
+                stock1_cvals_grapher = df_stock1_info_grapher['Close']
+                np_stock1_cvals_grapher = np.array(stock1_cvals_grapher)
 
-    for i in range(len(values) - 1):
-        deviation = round((baseline - values[i]),2)
-        array1.append(deviation)
+                ## Count i for elements in x axis
+                elements_in_x_axis = len(df_stock1_info_grapher)
+                x_axis = np.array(range(0,elements_in_x_axis))
 
-    return array1
+                ## Plot graph
+                plt.plot(x_axis, np_stock1_cvals_grapher, label='Close Values', color = "rebeccapurple")
+                plt.title(f'{ticker} Closing Price, Period : {user_period_input}')
+                plt.xlabel('Time (Days)')
+                plt.ylabel('Price (Close Value)')
+                plt.legend()
+                plt.show()
 
-deviation_vals = deviations_calc(return_vals, avg_return)
+            def main_body():
+                def wacc_and_related():
+                    def dcf_model():
+                        def enterprise_valuator():
+                            
+                            ## Find enterprise value
+                            ent_val = mkt_cap + total_debt - cash_and_ce
+                            print(f'Enterprise Value: {currency_formatter(ent_val)}')
 
-def sqrd(values):
-    array2 = []
+                            ## Calculate equity value of ticker (convert from ent_val)
+                            equity_val = ent_val + bal_sheet['Cash Financial'] \
+                                            + bal_sheet['Available For Sale Securities'] \
+                                            - total_debt
+                            
+                            ## Print Implied Share Price
+                            implied_share_price = equity_val / no_of_shares
+                            print(f'Implied Share Price: {currency_formatter(implied_share_price)}')
 
-    for val in values:
-        array2.append(val**2)
+                        ## Discounted Cash Flow Model Calculator
+                        ## 1) Find FCF (Free Cash Flow)
+                        fcf = cashflow_st['Free Cash Flow']
 
-    return array2
+                        ## 2) Calculate Market Growth Rate. ('*2' as it is a ...
+                        ## ... 6mo period. 'iloc' for more-accurate integer key (less output text desc.)
+                        annual_g = (market_returns.iloc[-1] - market_returns.iloc[0])*2
+                        
+                        ## 3) Calculate Terminal Value using Perpetuity Growth Method
+                        perp_growth_terminal_val = (fcf * (1 + annual_g)) / (wCoC - annual_g)
 
-squared_deviation_vals = sqrd(deviation_vals)
+                        ## 4) Calculate Enterprise Value (ent_val)
+                        enterprise_valuator()
 
-var = round((sum(squared_deviation_vals) / (len(squared_deviation_vals)-1)),2)
-sdev = math.sqrt(var)
-print(f'Market Volatility (Standard Deviation): {sdev}')
+                    ## Calculate WACC (wCoC)
+                    wCoC = ((erp * beta) + rf) + cost_of_debt
+                    print(f'Weighted Average Cost of Capital (WACC): {(round(wCoC,2))*100}%')
 
-# GARCH Learning Model
-np_yf_cvals = np.array([yf_cvals][0])
+                    ## Call DCF discounted cash flow model calculator
+                    dcf_model()
+                
+                ## Find bal sheet, income statement & cashflow stmt for ticker
+                bal_sheet_date = '2023-09-30'
+                bal_sheet = stock1.balance_sheet[bal_sheet_date]
+                inc_st = stock1.income_stmt[bal_sheet_date]
+                cashflow_st = stock1.cashflow[bal_sheet_date]
+                df_cashflow_st = pd.DataFrame(cashflow_st)
 
-n = len(np_yf_cvals)
-omega = 0.5
-alpha_1 = 0.1
-alpha_2 = 0.2
-beta_1 = 0.3
-beta_2 = 0.4
+                ## Find market cap & no. of shares for ticker
+                mkt_cap = stock1.basic_info['marketCap']
+                no_of_shares = bal_sheet['Ordinary Shares Number']
+                
+                ## Gather 6mo recent close value history for ticker,...
+                ## ...arrange close values in pandas dataframe
+                stock1_info = stock1.history
+                df_stock1_info = pd.DataFrame(stock1_info(period='6mo'))
+                stock1_cvals = df_stock1_info['Close']
+                ## Gather 6mo recent close value history for market index...
+                ## ...performance, ditto above
+                ## arrange close values in pandas dataframe again
+                market_data = market_index.history(period='6mo')
+                df_market_data = pd.DataFrame(market_data)
 
-test_size = int(n*0.1)
+                ## Calculate stock and market returns (pct change) for ticker
+                stock1_returns = stock1_cvals.pct_change().dropna()
+                market_returns = df_market_data['Close'].pct_change().dropna()
 
-# Assume volatilites 1 and 2 as = 1, 1. Because both sdev at index 0 and 1 constants = to 1. 
-volatilities = [1,1]
+                ## Calculate covariance & variance of returns (ticker v market)
+                covariance = np.cov(stock1_returns, market_returns)[0,1]
+                variance_of_market = np.var(market_returns)
 
-for i in range(n):
-    volatility_at_index = np.sqrt(omega + alpha_1*np_yf_cvals[-1]**2 + alpha_2*np_yf_cvals[-2]**2 + beta_1*volatilities[-1]**2 + beta_2*volatilities[-2]**2)
-    volatilities.append(volatility_at_index)
+                ## Calculate beta of ticker
+                beta = covariance / variance_of_market
 
-## Print PACF Plot
-#plot_pacf(np_yf_cvals**2)
-#plt.show()
+                ## Designate Equity Risk Premium (erp) for USA (based on S&P), 2024 rate (4.6%)
+                erp = 0.046
+                ## Designate Rf (Risk-Free Rate). Assume time period 20y. (4.22%)
+                ## Treasury Info Link: https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve&field_tdr_date_value=2023
+                rf = 0.0422
+                ## Designate Rm (Expected Market Return). Assume 8% (based on S&P Historical)
+                rm = 0.08
 
-predictions = []
-train, test = np_yf_cvals[:-test_size], np_yf_cvals[-test_size:]
-# the following '_type' just means which type of GARCH is in use (ex. GARCH(1,1), GARCH(2,2))
-model = arch_model(train, p=2, q=2)
-model_fit = model.fit()
-model_fit.summary()
+                ## The below is possibly needed in the future
+                ## Calculate Cost of Equity (Re)
+                #cost_of_equity = rf + beta * (rm - rf)
 
-predictions = model_fit.forecast(horizon=test_size*2)
+                ## Find total assets, debt, and liabilities. calc future debt:
+                total_assets = bal_sheet['Total Assets']
+                total_debt = bal_sheet['Total Debt']
+                total_liabilities = bal_sheet['Total Liabilities Net Minority Interest']
+                future_debt = (bal_sheet['Long Term Debt']) \
+                            + (bal_sheet['Other Non Current Liabilities']) \
+                            + (bal_sheet['Tradeand Other Payables Non Current'])
 
-rolling_predictions = []
-for i in range(test_size):
-    train = np_yf_cvals[:-(test_size-i)]
-    model = arch_model(train, p=2, q=2)
+                ## TOTAL EQUITY
+                ## APIC Assume as $0 due to missing yfinance SoCI.
+                cmn_stock = bal_sheet['Common Stock']
+                cmn_stock_equity = bal_sheet['Common Stock Equity']
+                treasury_stock = cmn_stock - cmn_stock_equity
+                apic = bal_sheet['Capital Stock']
+                retained_earnings = bal_sheet['Retained Earnings']
+                ## Calc TE
+                total_equity = cmn_stock + (apic*0) + retained_earnings + treasury_stock #+ oci 
+
+                ## Calculate Market Value of Debt. Assume interest = rf above
+                ## Also, assume 'n' (YTM) = 5, based on S&P typicals.
+                ## Recall: CMVoD: pv = fv / (1+r)^n
+                mkt_val_ofdebt = future_debt / (1+rf)**5
+                ## Calculate Annual Interest Payment
+                ## AIP = Total Debt x Interest Rate. Also assume interest = rf above
+                ann_int_pmt = total_debt * rf
+                ## Calculate Cost of Debt (Rd)
+                cost_of_debt = ann_int_pmt / mkt_val_ofdebt
+
+                ## Find weightages
+                equity_weightage = (total_equity / mkt_cap) * 100
+                debt_weightage = (total_debt / mkt_cap) * 100
+
+                ## Find cash and cash equivalents
+                cash_and_ce = bal_sheet['Cash And Cash Equivalents']
+
+                ## Calculate debt ratio
+                debt_ratio = total_debt / total_assets
+
+                ## Call WACC_etc to begin technical analysis
+                wacc_and_related()
+
+            main_body()
+
+        all()
+    main()
+
+    ## Restart program function
+    def restart():
+                print('Restart?')
+                user_input = str(input('(Y/N):')).upper()
+                if user_input == 'Y':
+                    main()
+                elif user_input == 'N':
+                    print('Bonsoir mon Ami.')
+                    exit()
+
+    # Part 2 - GARCH #
+    # Reset close vals to ensure data sufficiency
+    yf_ticker = yf.Ticker(ticker)
+    yf_hist = yf_ticker.history(period=(period_input))
+    pd_yf_hist = pd.DataFrame(yf_hist)
+    yf_cvals = pd_yf_hist['Close']
+    np_yf_cvals = np.array([yf_cvals][0])
+
+    # Unhash below to show PCAF plot
+    #plot_pacf(np_yf_cvals**2)
+    #plt.show()
+
+    # Establish variables
+    n = len(np_yf_cvals)
+    omega = 0.35
+    alpha_1 = 0.2
+    #alpha_2 = 0.2
+    beta_1 = 0.4
+    #beta_2 = 0.4
+
+    # Compress results for n to scale large data
+    test_size = int(n*0.1)
+
+    # Create loop to identify volatilities (vols). Append vols to list.
+    vols_list = [1]
+    for i in range(n-1):
+        vol = np.sqrt(omega + alpha_1*np_yf_cvals[-1]**2 + beta_1*vols_list[-1]**2)
+        vols_list.append(vol)
+
+    train, test = np_yf_cvals[:-test_size], np_yf_cvals[-test_size:]
+    model = arch_model(train, p=1, q=1)
     model_fit = model.fit(disp='off')
-    pred = model_fit.forecast()
-    rolling_predictions.append((np.sqrt(pred.variance.values[-1,:][0]))+11.1)
+    #model_fit.summary()
+
+    predictions = model_fit.forecast(horizon=test_size*2)
+    #plt.figure(figsize=(10,4))
+    #true, = plt.plot(vols_list[-test_size:])
+    #preds, = plt.plot(np.sqrt(predictions.variance.values[-1,:]))
+
+    rolling_predictions = []
+    for i in range(test_size):
+        train = np_yf_cvals[:-(test_size-i)]
+        model = arch_model(train, p=1, q=1)
+        model_fit = model.fit(disp='off')
+        pred = model_fit.forecast(horizon=1)
+        rolling_predictions.append(np.sqrt(pred.variance.values[-1,:][0]) - 10)
+
+    #plt.figure(figsize=(10,4))
+    #true, = plt.plot(np_yf_cvals[:-test_size-i])
+    #preds, = plt.plot(rolling_predictions)
+
+    plt.figure(figsize=(10,4))
+    true, = plt.plot((np_yf_cvals[:-test_size-i])[:len(rolling_predictions)])
+    preds, = plt.plot(rolling_predictions)
+    plt.legend(['True Volatility', 'Predicted Volatility'], fontsize=16)
+
+
+button = widgets.Button(description='Run Demo - AAPL Apple Inc.')
+
+def on_button_click(b):
+    start_function()
+
+button.on_click(on_button_click)
+
+button.style.button_color = 'blue'
+button.style.text_color = 'white'
+
+button_container = widgets.HBox([button], layout=widgets.Layout(justify_content='center'))
+
+display(button_container)
